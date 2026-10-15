@@ -26,7 +26,10 @@ import confetti from 'canvas-confetti';
 import { Loader2 } from 'lucide-react';
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('tools');
+  const queryTab = new URLSearchParams(window.location.search).get('tab') as ActiveTab | null;
+  const validTabs: ActiveTab[] = ['tools', 'edit', 'convert', 'organize', 'ai'];
+  const initialTab = queryTab && validTabs.includes(queryTab) ? queryTab : 'tools';
+  const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab);
   const [darkMode, setDarkMode] = useState<boolean>(false);
 
   // Canvas elements with undo/redo
