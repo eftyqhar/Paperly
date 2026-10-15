@@ -5,7 +5,8 @@
 <h1 align="center">Paperly</h1>
 
 <p align="center">
-  <strong>Your complete, privacy-first PDF toolkit — simple, powerful, and client-side.</strong>
+  <strong>Your complete, privacy-first PDF toolkit — simple, powerful, and client-side.</strong><br />
+  A product of <a href="https://deeplogic.agi.bd/"><strong>DeepLogic</strong></a>
 </p>
 
 <p align="center">
@@ -14,10 +15,12 @@
   <a href="#keyboard-shortcuts">Shortcuts</a> •
   <a href="#tech-stack">Tech Stack</a> •
   <a href="#getting-started">Getting Started</a> •
+  <a href="#about-deeplogic">About DeepLogic</a> •
   <a href="#license">License</a>
 </p>
 
 <p align="center">
+  <a href="https://deeplogic.agi.bd/"><img src="https://img.shields.io/badge/Product_of-DeepLogic-0284c7?style=flat-square" alt="Product of DeepLogic" /></a>
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 19" />
   <img src="https://img.shields.io/badge/TypeScript-5.8-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Vite-6-646CFF?style=flat-square&logo=vite&logoColor=white" alt="Vite" />
@@ -30,7 +33,7 @@
 
 ## 🌟 Overview
 
-**Paperly** is a high-performance, web-based PDF editor and utility suite built for individuals and teams who require full desktop-grade PDF editing without compromising privacy. All operations — from direct text editing and vector drawing to page rearrangement and AI summarization — are executed **100% client-side** inside your browser. No files are uploaded to external servers.
+**Paperly** is a high-performance, web-based PDF editor and utility suite created by [**DeepLogic**](https://deeplogic.agi.bd/) for individuals and teams who require full desktop-grade PDF editing without compromising privacy. All operations — from direct text editing and vector drawing to page rearrangement and AI summarization — are executed **100% client-side** inside your browser. No files are uploaded to external servers.
 
 ---
 
@@ -174,6 +177,15 @@ Paperly is architected from the ground up to respect user privacy:
 - All PDF rendering and text parsing happen directly inside your web browser.
 - No documents, images, or signatures are transmitted to remote servers.
 - Works offline once loaded.
+
+---
+
+## 🏢 About DeepLogic
+
+Paperly is proudly developed and maintained by [**DeepLogic**](https://deeplogic.agi.bd/).
+
+- 🌐 **Official Website**: [https://deeplogic.agi.bd/](https://deeplogic.agi.bd/)
+- 💡 **Mission**: Building smart, privacy-centric AI and web software solutions for modern, frictionless digital workflows.
 
 ---
 

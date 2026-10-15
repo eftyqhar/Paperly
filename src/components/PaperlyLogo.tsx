@@ -52,7 +52,17 @@ export const PaperlyLogo: React.FC<PaperlyLogoProps> = ({
           </span>
           {showSubtitle && (
             <span className={`font-medium tracking-wide text-slate-500 dark:text-slate-400 mt-0.5 ${subSizes[size]}`}>
-              by <span className="font-semibold text-slate-700 dark:text-slate-300">DeepLogic</span>
+              by{' '}
+              <a
+                href="https://deeplogic.agi.bd/"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="font-semibold text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:underline transition-colors"
+                title="Visit DeepLogic (https://deeplogic.agi.bd/)"
+              >
+                DeepLogic
+              </a>
             </span>
           )}
         </div>

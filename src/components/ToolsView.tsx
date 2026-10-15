@@ -15,7 +15,8 @@ import {
   Upload,
   ShieldCheck,
   Zap,
-  HardDrive
+  HardDrive,
+  ExternalLink
 } from 'lucide-react';
 import type { ActiveTab } from '../types/pdf';
 
@@ -252,6 +253,34 @@ export const ToolsView: React.FC<ToolsViewProps> = ({
             );
           })}
         </div>
+
+        {/* Footer with DeepLogic branding */}
+        <footer className="mt-16 pt-8 pb-12 border-t border-slate-200/80 dark:border-slate-800/80 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 dark:text-slate-400 gap-4">
+          <div className="flex items-center gap-2">
+            <span>A product of</span>
+            <a
+              href="https://deeplogic.agi.bd/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-bold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 transition-colors"
+            >
+              DeepLogic
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+          <div className="flex items-center gap-4 text-[11px]">
+            <span>100% Client-Side &amp; Private</span>
+            <span>•</span>
+            <a
+              href="https://deeplogic.agi.bd/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-blue-600 dark:hover:text-blue-400 hover:underline transition-colors font-medium"
+            >
+              deeplogic.agi.bd
+            </a>
+          </div>
+        </footer>
 
       </div>
     </div>
