@@ -30,6 +30,7 @@ import {
   Strikethrough,
   Trash2,
   FolderOpen,
+  FilePlus,
   Eraser,
   Undo2,
   Redo2,
@@ -56,6 +57,7 @@ interface EditorViewProps {
   activePage: number;
   setActivePage: (p: number) => void;
   onOpenSignatureModal: () => void;
+  onOpenCreateModal?: () => void;
   onUploadPdf?: (file: File) => void;
   pdfFileName?: string;
 }
@@ -68,6 +70,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   activePage,
   setActivePage,
   onOpenSignatureModal,
+  onOpenCreateModal,
   onUploadPdf,
   pdfFileName = 'Document.pdf',
 }) => {
@@ -1186,10 +1189,21 @@ export const EditorView: React.FC<EditorViewProps> = ({
       {/* Sub-toolbar / Action bar (Top-right mockup) */}
       <div className="h-12 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 flex items-center justify-between z-20">
         <div className="flex items-center space-x-1 sm:space-x-1.5 overflow-x-auto py-1">
+          {onOpenCreateModal && (
+            <button
+              onClick={onOpenCreateModal}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700 transition-all mr-1 shadow-xs cursor-pointer"
+              title="Create new blank or templated PDF"
+            >
+              <FilePlus className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span>New PDF</span>
+            </button>
+          )}
+
           {onUploadPdf && (
             <button
               onClick={() => openPdfInputRef.current?.click()}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/70 hover:bg-blue-100 dark:hover:bg-blue-900 border border-blue-200 dark:border-blue-800 transition-all mr-1 shadow-xs"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/70 hover:bg-blue-100 dark:hover:bg-blue-900 border border-blue-200 dark:border-blue-800 transition-all mr-1 shadow-xs cursor-pointer"
               title="Open PDF from your device"
             >
               <FolderOpen className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />

@@ -21,6 +21,8 @@ import ProtectModal from './components/Modals/ProtectModal';
 import WatermarkModal from './components/Modals/WatermarkModal';
 import CompressModal from './components/Modals/CompressModal';
 import { OcrModal, CompareModal } from './components/Modals/OcrAndCompareModals';
+import CreatePdfModal from './components/Modals/CreatePdfModal';
+import { createNewPdfDocument, type CreatePdfOptions } from './utils/pdfTemplates';
 
 import confetti from 'canvas-confetti';
 import { Loader2 } from 'lucide-react';
@@ -134,6 +136,20 @@ export function App() {
     }
   };
 
+  // Create brand new PDF from blank or template
+  const handleCreatePdf = (options: CreatePdfOptions) => {
+    const { pages: newPages, elements: newElements } = createNewPdfDocument(options);
+    setOriginalPdfBuffer(null);
+    setPdfFileName(options.fileName);
+    setPages(newPages);
+    setActivePage(1);
+    setElements(newElements);
+    setHistory([newElements]);
+    setHistoryIndex(0);
+    setActiveTab('edit');
+    confetti({ particleCount: 40, spread: 60, origin: { y: 0.6 } });
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 font-sans transition-colors duration-200">
       
@@ -185,6 +201,7 @@ export function App() {
             activePage={activePage}
             setActivePage={setActivePage}
             onOpenSignatureModal={() => setActiveModal('signature')}
+            onOpenCreateModal={() => setActiveModal('create')}
             onUploadPdf={handleUploadPdf}
             pdfFileName={pdfFileName}
           />
@@ -213,6 +230,12 @@ export function App() {
       </main>
 
       {/* Toolkit Modals */}
+      <CreatePdfModal
+        isOpen={activeModal === 'create'}
+        onClose={() => setActiveModal(null)}
+        onCreate={handleCreatePdf}
+      />
+
       <SignatureModal
         isOpen={activeModal === 'signature'}
         onClose={() => setActiveModal(null)}

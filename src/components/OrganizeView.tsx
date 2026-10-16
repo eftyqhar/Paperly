@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import type { PdfPageInfo, CanvasElement, ActiveTab } from '../types/pdf';
 import { exportElementsToPdf } from '../utils/pdfEngine';
+import { generateBlankPageDataUrl } from '../utils/pdfTemplates';
 import confetti from 'canvas-confetti';
 
 interface OrganizeViewProps {
@@ -289,7 +290,18 @@ export const OrganizeView: React.FC<OrganizeViewProps> = ({
         <div
           onClick={() => {
             const next = pages.length + 1;
-            setPages([...pages, { pageNumber: next, width: 595, height: 842, rotation: 0 }]);
+            const w = pages[0]?.width || 595;
+            const h = pages[0]?.height || 842;
+            setPages([
+              ...pages,
+              {
+                pageNumber: next,
+                width: w,
+                height: h,
+                rotation: 0,
+                renderedImageUrl: generateBlankPageDataUrl(w, h, next),
+              },
+            ]);
           }}
           className="aspect-[1/1.4] border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-blue-500 rounded-2xl flex flex-col items-center justify-center p-4 cursor-pointer text-slate-400 hover:text-blue-600 transition-colors my-auto"
         >

@@ -13,6 +13,7 @@ import {
   Stamp, 
   GitCompare,
   Upload,
+  FilePlus,
   ShieldCheck,
   Zap,
   HardDrive,
@@ -34,6 +35,15 @@ export const ToolsView: React.FC<ToolsViewProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const tools = [
+    {
+      id: 'create',
+      title: 'Create New PDF',
+      description: 'Start with a blank canvas or professional starter templates.',
+      icon: FilePlus,
+      color: 'text-indigo-600 dark:text-indigo-400',
+      bgColor: 'bg-indigo-50 dark:bg-indigo-950/50 group-hover:bg-indigo-100 dark:group-hover:bg-indigo-900/60',
+      action: () => onOpenModal('create'),
+    },
     {
       id: 'edit',
       title: 'Edit PDF',
@@ -183,8 +193,15 @@ export const ToolsView: React.FC<ToolsViewProps> = ({
             Edit, convert, merge, sign, annotate and do more — directly in your browser. No storage. Your files stay on your device.
           </p>
 
-          {/* Quick upload drop trigger */}
+          {/* Quick actions trigger */}
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+            <button
+              onClick={() => onOpenModal('create')}
+              className="inline-flex items-center gap-2.5 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:from-blue-700 active:to-indigo-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/25 transition-all transform hover:-translate-y-0.5 cursor-pointer"
+            >
+              <FilePlus className="w-4 h-4" />
+              <span>Create New PDF</span>
+            </button>
             <input 
               type="file" 
               ref={fileInputRef} 
@@ -194,17 +211,17 @@ export const ToolsView: React.FC<ToolsViewProps> = ({
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-2.5 px-6 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-xl shadow-lg shadow-blue-500/25 transition-all transform hover:-translate-y-0.5"
+              className="inline-flex items-center gap-2.5 px-5 py-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-medium rounded-xl shadow-xs transition-all transform hover:-translate-y-0.5 cursor-pointer"
             >
-              <Upload className="w-4 h-4" />
+              <Upload className="w-4 h-4 text-blue-600 dark:text-blue-400" />
               <span>Open PDF from Computer</span>
             </button>
             <button
               onClick={() => setActiveTab('edit')}
-              className="inline-flex items-center gap-2 px-5 py-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-medium rounded-xl shadow-sm transition-all"
+              className="inline-flex items-center gap-2 px-4 py-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-medium rounded-xl shadow-xs transition-all cursor-pointer"
             >
-              <FileEdit className="w-4 h-4 text-blue-500" />
-              <span>Explore Demo Editor</span>
+              <FileEdit className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+              <span>Sample Editor</span>
             </button>
           </div>
 
