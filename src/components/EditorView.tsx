@@ -868,6 +868,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
         return;
       }
 
+      const isScannedPage = !currentPage.textBlocks || currentPage.textBlocks.length === 0;
+
       const newEl: CanvasElement = {
         id: `el-text-${Date.now()}`,
         type: 'text',
@@ -878,10 +880,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
         height: 32,
         text: 'Type text here',
         fontFamily: 'Inter',
-        fontSize: 18,
+        fontSize: 16,
         fontWeight: 'normal',
         color: '#0f172a',
-        backgroundColor: 'transparent',
+        backgroundColor: isScannedPage ? '#ffffff' : 'transparent',
         layerId: 'text-layer',
         opacity: 1,
       };
@@ -960,6 +962,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
       return;
     }
 
+    const isScannedPage = !currentPage.textBlocks || currentPage.textBlocks.length === 0;
+
     // Otherwise, double-clicking anywhere spawns a new text block at that position
     const newEl: CanvasElement = {
       id: `el-text-${Date.now()}`,
@@ -974,7 +978,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
       fontSize: 16,
       fontWeight: 'normal',
       color: '#0f172a',
-      backgroundColor: 'transparent',
+      backgroundColor: isScannedPage ? '#ffffff' : 'transparent',
       layerId: 'text-layer',
       opacity: 1,
     };
@@ -1680,9 +1684,30 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
             {/* Scanned / Image PDF notification pill */}
             {(!currentPage.textBlocks || currentPage.textBlocks.length === 0) && (
-              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 px-3.5 py-1.5 bg-slate-900/90 backdrop-blur text-white text-xs rounded-full shadow-lg flex items-center gap-2 pointer-events-none border border-slate-700/60">
-                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                <span>Image / Scanned document: Double-click anywhere to add text, or use Whiteout to redact</span>
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 px-3.5 py-1.5 bg-slate-900/95 backdrop-blur text-white text-xs rounded-full shadow-lg flex items-center gap-2.5 border border-slate-700/60 select-none">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                <span className="font-medium text-slate-200">Scanned / Flattened Document</span>
+                <span className="text-slate-500">•</span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveTool('text');
+                  }}
+                  className="px-2 py-0.5 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded text-[11px] cursor-pointer transition-colors shadow-xs"
+                >
+                  Add / Replace Text
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveTool('whiteout');
+                  }}
+                  className="px-2 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-200 font-medium rounded text-[11px] cursor-pointer transition-colors"
+                >
+                  Whiteout / Redact
+                </button>
               </div>
             )}
 
@@ -1783,6 +1808,24 @@ export const EditorView: React.FC<EditorViewProps> = ({
                           setSelectedIds([el.id]);
                           if (activeTool === 'text' && el.type === 'text' && !isLocked) {
                             setEditingId(el.id);
+                          } else if (activeTool === 'text' && el.type === 'whiteout' && !isLocked) {
+                            const updated = elements.map((item) =>
+                              item.id === el.id
+                                ? {
+                                    ...item,
+                                    type: 'text' as const,
+                                    text: 'Type text here',
+                                    backgroundColor: '#ffffff',
+                                    color: '#0f172a',
+                                    fontSize: 14,
+                                    fontFamily: 'Arial, sans-serif',
+                                    layerId: 'text-layer',
+                                  }
+                                : item
+                            );
+                            setElements(updated);
+                            recordHistory(updated);
+                            setEditingId(el.id);
                           }
                         }
                       }
@@ -1790,6 +1833,24 @@ export const EditorView: React.FC<EditorViewProps> = ({
                     onDoubleClick={(e) => {
                       e.stopPropagation();
                       if (el.type === 'text' && !isLocked) {
+                        setEditingId(el.id);
+                      } else if (el.type === 'whiteout' && !isLocked) {
+                        const updated = elements.map((item) =>
+                          item.id === el.id
+                            ? {
+                                ...item,
+                                type: 'text' as const,
+                                text: 'Type text here',
+                                backgroundColor: '#ffffff',
+                                color: '#0f172a',
+                                fontSize: 14,
+                                fontFamily: 'Arial, sans-serif',
+                                layerId: 'text-layer',
+                              }
+                            : item
+                        );
+                        setElements(updated);
+                        recordHistory(updated);
                         setEditingId(el.id);
                       }
                     }}
@@ -2308,6 +2369,33 @@ export const EditorView: React.FC<EditorViewProps> = ({
                       );
                     })}
                   </div>
+
+                  {/* Text Background Mask (Transparent vs Whiteout / Opaque) */}
+                  {selectedElement?.type === 'text' && (
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[11px] text-slate-500 font-medium">Cover Background</span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateSelected({
+                            backgroundColor:
+                              selectedElement.backgroundColor && selectedElement.backgroundColor !== 'transparent'
+                                ? 'transparent'
+                                : '#ffffff',
+                          })
+                        }
+                        className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
+                          selectedElement.backgroundColor && selectedElement.backgroundColor !== 'transparent'
+                            ? 'bg-blue-50 border-blue-500 text-blue-600 dark:bg-blue-950 dark:text-blue-300'
+                            : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400'
+                        }`}
+                      >
+                        {selectedElement.backgroundColor && selectedElement.backgroundColor !== 'transparent'
+                          ? 'Opaque White'
+                          : 'Transparent'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
