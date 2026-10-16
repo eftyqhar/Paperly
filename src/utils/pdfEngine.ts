@@ -16,7 +16,12 @@ export interface PdfParseResult {
 // Render real PDF file pages to high-resolution data URLs and extract all text items as editable elements
 export const renderAndExtractPdf = async (file: File): Promise<PdfParseResult> => {
   const arrayBuffer = await file.arrayBuffer();
-  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+  const loadingTask = pdfjsLib.getDocument({
+    data: new Uint8Array(arrayBuffer),
+    cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',
+    cMapPacked: true,
+    standardFontDataUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/standard_fonts/',
+  });
   const pdf = await loadingTask.promise;
   const numPages = pdf.numPages;
   const pages: PdfPageInfo[] = [];
@@ -56,18 +61,18 @@ export const renderAndExtractPdf = async (file: File): Promise<PdfParseResult> =
           fontFamily: string;
         }[] = [];
 
-
         for (const item of textContent.items) {
           if (!('str' in item) || !item.str || item.str.trim().length === 0) continue;
           
           const transform = item.transform;
           const [vx, vy] = unscaledViewport.convertToViewportPoint(transform[4], transform[5]);
           
-          const fontSize = Math.max(8, Math.round(Math.abs(transform[3]) || Math.abs(transform[0]) || item.height || 12));
+          const fontScale = Math.hypot(transform[0], transform[1]) || Math.abs(transform[3]) || item.height || 12;
+          const fontSize = Math.max(8, Math.round(fontScale));
           const baselineY = Math.round(vy);
           const x = Math.round(vx);
-          const y = Math.round(vy - fontSize * 0.82);
-          const height = Math.round(fontSize * 1.05);
+          const height = Math.max(18, Math.round(fontSize * 1.25));
+          const y = Math.round(vy - fontSize * 0.88);
           const width = Math.round(item.width || (item.str.length * fontSize * 0.55));
 
           const style = textContent.styles ? textContent.styles[item.fontName] : null;
@@ -103,33 +108,34 @@ export const renderAndExtractPdf = async (file: File): Promise<PdfParseResult> =
           });
         }
 
-        // Sort items strictly: top-to-bottom by baseline, and left-to-right on the same line
+        // Sort items: top-to-bottom by baseline, then left-to-right on the same line
         rawItems.sort((a, b) => {
-          if (Math.abs(a.baselineY - b.baselineY) > 1.2) {
+          const baselineTol = Math.max(2.5, Math.min(a.fontSize, b.fontSize) * 0.35);
+          if (Math.abs(a.baselineY - b.baselineY) > baselineTol) {
             return a.baselineY - b.baselineY;
           }
           return a.x - b.x;
         });
 
-        // Merge adjacent words strictly on the exact same baseline and font size
+        // Merge adjacent words into complete coherent sentences and lines
         const groupedLines: typeof rawItems = [];
 
         for (const item of rawItems) {
           const current = groupedLines[groupedLines.length - 1];
-
-          // Only merge if on the EXACT same baseline, same font size, and same weight
-          const isSameLine = current && Math.abs(current.baselineY - item.baselineY) <= 1.2;
-          const isSameFont = current && Math.abs(current.fontSize - item.fontSize) <= 1 && current.fontWeight === item.fontWeight;
+          const lineTol = Math.max(2.5, Math.min(current ? current.fontSize : 12, item.fontSize) * 0.35);
+          const isSameLine = current && Math.abs(current.baselineY - item.baselineY) <= lineTol;
+          const isSameFont = current && Math.abs(current.fontSize - item.fontSize) <= 2.5 && current.fontWeight === item.fontWeight;
 
           if (current && isSameLine && isSameFont) {
             const prevRight = current.x + current.width;
             const gap = item.x - prevRight;
 
-            // Normal space between adjacent words on the same line
-            if (gap >= -4 && gap <= current.fontSize * 1.3) {
-              const needsSpace = gap > 1.5 && !current.str.endsWith(' ') && !item.str.startsWith(' ');
+            // Merge words on the same line (allowing standard word spaces and slight overlaps)
+            if (gap >= -6 && gap <= current.fontSize * 2.2) {
+              const needsSpace = gap > 1.2 && !current.str.endsWith(' ') && !item.str.startsWith(' ');
               current.str += (needsSpace ? ' ' : '') + item.str;
               current.width = Math.max(current.width, item.x + item.width - current.x);
+              current.height = Math.max(current.height, item.height);
               continue;
             }
           }
@@ -201,8 +207,8 @@ export const renderAndExtractPdf = async (file: File): Promise<PdfParseResult> =
             pageNumber: pageNum,
             x: line.x,
             y: line.y,
-            width: Math.max(20, line.width),
-            height: Math.max(14, line.height),
+            width: Math.max(24, Math.round(line.width)),
+            height: Math.max(18, Math.round(line.height)),
             text: line.str,
             fontSize: line.fontSize,
             fontWeight: line.fontWeight,

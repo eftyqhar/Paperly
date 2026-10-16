@@ -41,7 +41,8 @@ import {
   ArrowUp,
   ArrowDown,
   FileText,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Sparkles
 } from 'lucide-react';
 import type { ToolMode, CanvasElement, PdfPageInfo, LayerItem, PdfTextBlock } from '../types/pdf';
 
@@ -79,6 +80,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [showPagesSidebar, setShowPagesSidebar] = useState<boolean>(true);
   const [leftSidebarTab, setLeftSidebarTab] = useState<'pages' | 'layers'>('pages');
   const [showPropertiesSidebar, setShowPropertiesSidebar] = useState<boolean>(true);
+  const [highlightEditableText, setHighlightEditableText] = useState<boolean>(true);
 
   // Undo / Redo History Stack
   interface HistorySnapshot {
@@ -833,17 +835,18 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const clickX = Math.round((e.clientX - rect.left) / (zoom / 100));
+    const clickY = Math.round((e.clientY - rect.top) / (zoom / 100));
+
     if (activeTool === 'text') {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const clickX = Math.round((e.clientX - rect.left) / (zoom / 100));
-      const clickY = Math.round((e.clientY - rect.top) / (zoom / 100));
-      
       const newEl: CanvasElement = {
         id: `el-text-${Date.now()}`,
         type: 'text',
         pageNumber: activePage,
         x: Math.max(10, clickX - 10),
-        y: Math.max(10, clickY - 10),
+        y: Math.max(10, clickY - 12),
         width: 180,
         height: 32,
         text: 'Type text here',
@@ -864,10 +867,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
       return;
     }
     if (activeTool === 'whiteout') {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const clickX = Math.round((e.clientX - rect.left) / (zoom / 100));
-      const clickY = Math.round((e.clientY - rect.top) / (zoom / 100));
-      
       const newEl: CanvasElement = {
         id: `el-whiteout-${Date.now()}`,
         type: 'whiteout',
@@ -886,7 +885,77 @@ export const EditorView: React.FC<EditorViewProps> = ({
       setActiveTool('select');
       return;
     }
+
+    // If user clicked close to an untouched text block in select mode, start editing it immediately
+    const nearbyBlock = (currentPage.textBlocks || []).find((tb) => {
+      if (tb.isErased) return false;
+      return (
+        clickX >= tb.x - 4 &&
+        clickX <= tb.x + tb.width + 4 &&
+        clickY >= tb.y - 4 &&
+        clickY <= tb.y + tb.height + 4
+      );
+    });
+
+    if (nearbyBlock) {
+      const textLayer = layers.find((l) => l.id === 'text-layer');
+      if (!textLayer || (!textLayer.locked && textLayer.visible !== false)) {
+        startEditingTextBlock(nearbyBlock);
+        return;
+      }
+    }
+
     setSelectedIds([]);
+  };
+
+  const handleCanvasDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const clickX = Math.round((e.clientX - rect.left) / (zoom / 100));
+    const clickY = Math.round((e.clientY - rect.top) / (zoom / 100));
+
+    // Check if user double-clicked on or near any untouched text block
+    const nearbyBlock = (currentPage.textBlocks || []).find((tb) => {
+      if (tb.isErased) return false;
+      const padX = 14;
+      const padY = 8;
+      return (
+        clickX >= tb.x - padX &&
+        clickX <= tb.x + tb.width + padX &&
+        clickY >= tb.y - padY &&
+        clickY <= tb.y + tb.height + padY
+      );
+    });
+
+    if (nearbyBlock) {
+      startEditingTextBlock(nearbyBlock);
+      return;
+    }
+
+    // Otherwise, double-clicking anywhere spawns a new text block at that position
+    const newEl: CanvasElement = {
+      id: `el-text-${Date.now()}`,
+      type: 'text',
+      pageNumber: activePage,
+      x: Math.max(10, clickX - 10),
+      y: Math.max(10, clickY - 14),
+      width: 180,
+      height: 32,
+      text: 'Type text here',
+      fontFamily: 'Arial, sans-serif',
+      fontSize: 16,
+      fontWeight: 'normal',
+      color: '#0f172a',
+      backgroundColor: 'transparent',
+      layerId: 'text-layer',
+      opacity: 1,
+    };
+    const updated = [...elements, newEl];
+    setElements(updated);
+    recordHistory(updated);
+    setSelectedIds([newEl.id]);
+    setEditingId(newEl.id);
   };
 
   const startEditingTextBlock = (tb: PdfTextBlock) => {
@@ -903,6 +972,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
     );
     setPages(updatedPages);
 
+    const safeHeight = Math.max(26, Math.round(tb.fontSize * 1.35), Math.round(tb.height * 1.2));
+    const safeWidth = Math.max(tb.width + 16, 40);
+
     // 2. Spawn the editable element matching font size, weight, family, and color
     const newEl: CanvasElement = {
       id: `el-edited-${Date.now()}`,
@@ -911,8 +983,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
       pageNumber: activePage,
       x: tb.x,
       y: tb.y,
-      width: Math.max(tb.width + 6, 30),
-      height: tb.height,
+      width: safeWidth,
+      height: safeHeight,
       text: tb.text,
       fontSize: tb.fontSize,
       fontFamily: tb.fontFamily || 'Arial, sans-serif',
@@ -927,6 +999,48 @@ export const EditorView: React.FC<EditorViewProps> = ({
     recordHistory(updatedElements, updatedPages);
     setSelectedIds([newEl.id]);
     setEditingId(newEl.id);
+  };
+
+  // Convert all detected text blocks on current page into live editable elements
+  const makeAllPageTextEditable = () => {
+    const unedited = (currentPage.textBlocks || []).filter(
+      (tb) => !tb.isErased && !elements.some((el) => el.originTextBlockId === tb.id)
+    );
+    if (unedited.length === 0) return;
+
+    const updatedPages = pages.map((p) =>
+      p.pageNumber === activePage
+        ? {
+            ...p,
+            textBlocks: p.textBlocks?.map((b) => ({ ...b, isErased: true })),
+          }
+        : p
+    );
+    setPages(updatedPages);
+
+    const newElements: CanvasElement[] = unedited.map((tb, idx) => ({
+      id: `el-all-${Date.now()}-${idx}`,
+      originTextBlockId: tb.id,
+      type: 'text',
+      pageNumber: activePage,
+      x: tb.x,
+      y: tb.y,
+      width: Math.max(tb.width + 16, 40),
+      height: Math.max(26, Math.round(tb.fontSize * 1.35), Math.round(tb.height * 1.2)),
+      text: tb.text,
+      fontSize: tb.fontSize,
+      fontFamily: tb.fontFamily || 'Arial, sans-serif',
+      fontWeight: tb.fontWeight || 'normal',
+      color: tb.color || '#0f172a',
+      backgroundColor: 'transparent',
+      layerId: 'text-layer',
+      opacity: 1,
+    }));
+
+    const allElements = [...elements, ...newElements];
+    setElements(allElements);
+    recordHistory(allElements, updatedPages);
+    setSelectedIds(newElements.map((el) => el.id));
   };
 
   return (
@@ -1067,6 +1181,37 @@ export const EditorView: React.FC<EditorViewProps> = ({
             >
               <CheckSquare className="w-3.5 h-3.5" />
             </button>
+          </div>
+
+          {/* Editable Text Detection & Tools */}
+          <div className="flex items-center space-x-1 border border-slate-200 dark:border-slate-800 rounded-lg p-0.5 text-xs">
+            <button
+              onClick={() => setHighlightEditableText(!highlightEditableText)}
+              className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors ${
+                highlightEditableText
+                  ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-semibold'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+              title="Highlight all editable text boxes on this page"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+              <span className="hidden md:inline">Highlight Text</span>
+              {currentPage.textBlocks && currentPage.textBlocks.filter(tb => !tb.isErased).length > 0 && (
+                <span className="px-1.5 py-0.2 bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200 rounded-full text-[10px] font-bold">
+                  {currentPage.textBlocks.filter(tb => !tb.isErased).length}
+                </span>
+              )}
+            </button>
+
+            {currentPage.textBlocks && currentPage.textBlocks.filter(tb => !tb.isErased).length > 0 && (
+              <button
+                onClick={makeAllPageTextEditable}
+                className="hidden lg:inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50 hover:bg-amber-100 font-semibold transition-all shadow-xs"
+                title="Convert all original text on this page into live editable layer objects"
+              >
+                <span>Edit All Text</span>
+              </button>
+            )}
           </div>
 
           {/* View / Zoom Stepper */}
@@ -1327,7 +1472,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
                 </div>
 
                 {/* Page Objects Stacking Tree */}
-                <div className="space-y-1.5 border-t border-slate-200 dark:border-slate-800 pt-3">
+                <div className="space-y-2 border-t border-slate-200 dark:border-slate-800 pt-3">
                   <div className="flex items-center justify-between px-1 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                     <span>Page {activePage} Objects</span>
                     <span className="font-mono text-[10px] text-slate-400">
@@ -1335,9 +1480,21 @@ export const EditorView: React.FC<EditorViewProps> = ({
                     </span>
                   </div>
 
+                  {currentPage?.textBlocks && currentPage.textBlocks.some((tb) => !tb.isErased) && (
+                    <button
+                      onClick={makeAllPageTextEditable}
+                      className="w-full py-2 px-2.5 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900 border border-blue-200 dark:border-blue-800/80 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-xs"
+                      title="Convert all original page text into interactive layer objects"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-blue-500 animate-pulse" />
+                      <span>Make All Text Editable</span>
+                    </button>
+                  )}
+
                   {elements.filter((el) => el.pageNumber === activePage).length === 0 ? (
-                    <div className="p-4 text-center text-slate-400 text-xs border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
-                      No custom elements on page {activePage}. Add text, shapes, or highlights above.
+                    <div className="p-4 text-center text-slate-400 text-xs border border-dashed border-slate-200 dark:border-slate-800 rounded-xl space-y-1">
+                      <p>No converted elements on page {activePage}.</p>
+                      <p className="text-[11px] text-slate-400/80">Click any text on canvas or use the button above.</p>
                     </div>
                   ) : (
                     <div className="space-y-1">
@@ -1506,6 +1663,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
               e.stopPropagation();
               handleCanvasClick(e);
             }}
+            onDoubleClick={handleCanvasDoubleClick}
           >
             {/* Real rendered PDF page background */}
             {currentPage.renderedImageUrl && (
@@ -1514,6 +1672,14 @@ export const EditorView: React.FC<EditorViewProps> = ({
                 alt={`Page ${currentPage.pageNumber}`}
                 className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none z-0"
               />
+            )}
+
+            {/* Scanned / Image PDF notification pill */}
+            {(!currentPage.textBlocks || currentPage.textBlocks.length === 0) && (
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 px-3.5 py-1.5 bg-slate-900/90 backdrop-blur text-white text-xs rounded-full shadow-lg flex items-center gap-2 pointer-events-none border border-slate-700/60">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                <span>Image / Scanned document: Double-click anywhere to add text, or use Whiteout to redact</span>
+              </div>
             )}
 
             {/* Permanent whiteout masks over all edited original text blocks */}
@@ -1556,6 +1722,11 @@ export const EditorView: React.FC<EditorViewProps> = ({
                 .map((tb) => (
                   <div
                     key={tb.id}
+                    onMouseDown={(e) => {
+                      if (isTextLayerLocked) return;
+                      e.stopPropagation();
+                      startEditingTextBlock(tb);
+                    }}
                     onClick={(e) => {
                       if (isTextLayerLocked) return;
                       e.stopPropagation();
@@ -1569,15 +1740,17 @@ export const EditorView: React.FC<EditorViewProps> = ({
                     className={`absolute ${
                       isTextLayerLocked
                         ? 'cursor-not-allowed'
-                        : 'cursor-text hover:ring-1 hover:ring-blue-400/80 hover:bg-blue-500/10'
+                        : highlightEditableText
+                        ? 'cursor-text ring-1 ring-blue-400/50 bg-blue-500/10 hover:bg-blue-500/25 hover:ring-2 hover:ring-blue-500 shadow-xs'
+                        : 'cursor-text hover:ring-1.5 hover:ring-blue-400 hover:bg-blue-500/15'
                     } rounded-xs transition-all z-10`}
                     style={{
-                      left: `${tb.x}px`,
-                      top: `${tb.y}px`,
-                      width: `${tb.width}px`,
-                      height: `${tb.height}px`,
+                      left: `${tb.x - 2}px`,
+                      top: `${tb.y - 2}px`,
+                      width: `${tb.width + 4}px`,
+                      height: `${tb.height + 4}px`,
                     }}
-                    title={isTextLayerLocked ? 'Text layer is locked' : 'Click to edit text'}
+                    title={isTextLayerLocked ? 'Text layer is locked' : `Click to edit: "${tb.text}"`}
                   />
                 ));
             })()}
@@ -1700,7 +1873,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
                           value={el.text}
                           onChange={(e) => updateSelected({ text: e.target.value })}
                           onBlur={() => setEditingId(null)}
-                          className={`w-full h-full p-0 m-0 border border-blue-500 rounded-xs outline-none resize-none bg-white font-sans ${
+                          className={`w-full h-full p-1 m-0 border-2 border-blue-500 rounded-xs outline-none resize-none bg-white font-sans ${
                             el.text?.includes('\n') ? 'whitespace-pre-line' : 'whitespace-nowrap overflow-hidden'
                           }`}
                           style={{
@@ -1711,12 +1884,12 @@ export const EditorView: React.FC<EditorViewProps> = ({
                             textAlign: el.textAlign || 'left',
                             color: el.color || '#0f172a',
                             fontFamily: el.fontFamily || 'Arial, sans-serif',
-                            lineHeight: 1.05,
+                            lineHeight: 1.25,
                           }}
                         />
                       ) : (
                         <div
-                          className={`leading-none p-0 rounded-xs select-text hover:bg-blue-50/50 ${
+                          className={`leading-normal p-0.5 rounded-xs select-text hover:bg-blue-50/50 ${
                             el.text?.includes('\n') ? 'whitespace-pre-line' : 'whitespace-nowrap'
                           }`}
                           style={{
@@ -1728,7 +1901,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
                             textAlign: el.textAlign || 'left',
                             color: el.color || '#0f172a',
                             fontFamily: el.fontFamily || 'Arial, sans-serif',
-                            lineHeight: 1.05,
+                            lineHeight: 1.25,
                           }}
                         >
                           {el.text}
