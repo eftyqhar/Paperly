@@ -42,9 +42,11 @@ import {
   ArrowDown,
   FileText,
   SlidersHorizontal,
-  Sparkles
+  Sparkles,
+  Loader2,
 } from 'lucide-react';
 import type { ToolMode, CanvasElement, PdfPageInfo, LayerItem, PdfTextBlock } from '../types/pdf';
+import { recognizeCanvasText, convertOcrLinesToElements } from '../utils/ocrEngine';
 
 interface EditorViewProps {
   elements: CanvasElement[];
@@ -97,6 +99,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [isMarqueeDragging, setIsMarqueeDragging] = useState<boolean>(false);
   const [marqueeStart, setMarqueeStart] = useState<{ x: number; y: number } | null>(null);
   const [marqueeCurrent, setMarqueeCurrent] = useState<{ x: number; y: number } | null>(null);
+
+  // Scanned document OCR recognition state
+  const [isOcrScanning, setIsOcrScanning] = useState<boolean>(false);
 
   // Layers state
   const [layers, setLayers] = useState<LayerItem[]>([
@@ -1112,6 +1117,34 @@ export const EditorView: React.FC<EditorViewProps> = ({
     setSelectedIds(newElements.map((el) => el.id));
   };
 
+  // Run client-side OCR on the current scanned / image page to extract all text as editable layers
+  const handleRunOcrOnCurrentPage = async () => {
+    if (!currentPage.renderedImageUrl || isOcrScanning) return;
+    setIsOcrScanning(true);
+    try {
+      const ocrLines = await recognizeCanvasText(currentPage.renderedImageUrl, 2.0, 'eng');
+      if (ocrLines.length > 0) {
+        const { textBlocks: ocrBlocks, elements: ocrElements } = convertOcrLinesToElements(
+          ocrLines,
+          activePage
+        );
+        const updatedPages = pages.map((p) =>
+          p.pageNumber === activePage ? { ...p, textBlocks: ocrBlocks } : p
+        );
+        setPages(updatedPages);
+
+        const otherPageElements = elements.filter((el) => el.pageNumber !== activePage);
+        const updatedElements = [...otherPageElements, ...ocrElements];
+        setElements(updatedElements);
+        recordHistory(updatedElements, updatedPages);
+      }
+    } catch (err) {
+      console.warn('OCR error:', err);
+    } finally {
+      setIsOcrScanning(false);
+    }
+  };
+
   return (
     <div 
       className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden bg-slate-100 dark:bg-slate-950 select-none"
@@ -1730,11 +1763,33 @@ export const EditorView: React.FC<EditorViewProps> = ({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
+                    handleRunOcrOnCurrentPage();
+                  }}
+                  disabled={isOcrScanning}
+                  className="px-2.5 py-0.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-medium rounded text-[11px] cursor-pointer transition-all shadow-xs flex items-center gap-1.5 disabled:opacity-50"
+                  title="Automatically recognize all text and convert to editable layers"
+                >
+                  {isOcrScanning ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <span>Recognizing Text...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3 h-3 text-amber-300" />
+                      <span>Make Text Editable (OCR)</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
                     setActiveTool('text');
                   }}
-                  className="px-2 py-0.5 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded text-[11px] cursor-pointer transition-colors shadow-xs"
+                  className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium rounded text-[11px] cursor-pointer transition-colors"
                 >
-                  Add / Replace Text
+                  Add Text
                 </button>
                 <button
                   type="button"
@@ -1742,9 +1797,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
                     e.stopPropagation();
                     setActiveTool('whiteout');
                   }}
-                  className="px-2 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-200 font-medium rounded text-[11px] cursor-pointer transition-colors"
+                  className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium rounded text-[11px] cursor-pointer transition-colors"
                 >
-                  Whiteout / Redact
+                  Whiteout
                 </button>
               </div>
             )}

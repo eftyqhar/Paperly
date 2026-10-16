@@ -2,6 +2,7 @@ import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.js?url';
 import type { CanvasElement, PdfPageInfo, PdfTextBlock } from '../types/pdf';
+import { recognizeCanvasText, convertOcrLinesToElements } from './ocrEngine';
 
 // Safely configure PDF.js worker with Vite asset URL
 if (typeof window !== 'undefined') {
@@ -242,6 +243,20 @@ export const renderAndExtractPdf = async (file: File): Promise<PdfParseResult> =
         });
       } catch (e) {
         console.warn('Text extraction fallback for page', pageNum, e);
+      }
+
+      // If page has NO text blocks extracted from vector stream (e.g. Scanned / Flattened Image PDF), run OCR
+      if (pageTextBlocks.length === 0 && pageNum === 1) {
+        try {
+          const ocrLines = await recognizeCanvasText(canvas, scale, 'eng');
+          if (ocrLines.length > 0) {
+            const { textBlocks: ocrBlocks, elements: ocrElements } = convertOcrLinesToElements(ocrLines, pageNum);
+            pageTextBlocks.push(...ocrBlocks);
+            elements.push(...ocrElements);
+          }
+        } catch (ocrErr) {
+          console.warn('Auto-OCR fallback error:', ocrErr);
+        }
       }
 
       // Pristine, 100% authentic PDF rendering matching the original PDF perfectly
