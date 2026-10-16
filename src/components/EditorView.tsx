@@ -850,24 +850,69 @@ export const EditorView: React.FC<EditorViewProps> = ({
     const clickX = Math.round((e.clientX - rect.left) / (zoom / 100));
     const clickY = Math.round((e.clientY - rect.top) / (zoom / 100));
 
-    if (activeTool === 'text') {
-      const clickedEl = elements.find((el) => {
-        if (el.pageNumber !== activePage || el.type !== 'text') return false;
-        return (
-          clickX >= el.x - 4 &&
-          clickX <= el.x + (el.width || 60) + 4 &&
-          clickY >= el.y - 4 &&
-          clickY <= el.y + (el.height || 24) + 4
-        );
-      });
+    // Priority 1: Check if user clicked on or near (within generous padding) ANY existing text element
+    const nearbyEl = elements.find((el) => {
+      if (el.pageNumber !== activePage || el.type !== 'text' || isElementLocked(el)) return false;
+      const padX = 20;
+      const padY = 12;
+      return (
+        clickX >= el.x - padX &&
+        clickX <= el.x + (el.width || 60) + padX &&
+        clickY >= el.y - padY &&
+        clickY <= el.y + (el.height || 24) + padY
+      );
+    });
 
-      if (clickedEl && !isElementLocked(clickedEl)) {
-        setSelectedIds([clickedEl.id]);
-        setEditingId(clickedEl.id);
+    if (nearbyEl) {
+      setSelectedIds([nearbyEl.id]);
+      setEditingId(nearbyEl.id);
+      setActiveTool('select');
+      return;
+    }
+
+    // Priority 2: Check if user clicked on or near ANY original text block on the page
+    const nearbyBlock = (currentPage.textBlocks || []).find((tb) => {
+      const padX = 20;
+      const padY = 12;
+      return (
+        clickX >= tb.x - padX &&
+        clickX <= tb.x + tb.width + padX &&
+        clickY >= tb.y - padY &&
+        clickY <= tb.y + tb.height + padY
+      );
+    });
+
+    if (nearbyBlock) {
+      const textLayer = layers.find((l) => l.id === 'text-layer');
+      if (!textLayer || (!textLayer.locked && textLayer.visible !== false)) {
+        startEditingTextBlock(nearbyBlock);
         setActiveTool('select');
         return;
       }
+    }
 
+    // Only if activeTool is 'whiteout' or explicitly 'text' and clicking empty space:
+    if (activeTool === 'whiteout') {
+      const newEl: CanvasElement = {
+        id: `el-whiteout-${Date.now()}`,
+        type: 'whiteout',
+        pageNumber: activePage,
+        x: Math.max(10, clickX - 50),
+        y: Math.max(10, clickY - 12),
+        width: 140,
+        height: 28,
+        layerId: 'shape-layer',
+        opacity: 1,
+      };
+      const updated = [...elements, newEl];
+      setElements(updated);
+      recordHistory(updated);
+      setSelectedIds([newEl.id]);
+      setActiveTool('select');
+      return;
+    }
+
+    if (activeTool === 'text') {
       const isScannedPage = !currentPage.textBlocks || currentPage.textBlocks.length === 0;
 
       const newEl: CanvasElement = {
@@ -895,46 +940,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
       setActiveTool('select');
       return;
     }
-    if (activeTool === 'whiteout') {
-      const newEl: CanvasElement = {
-        id: `el-whiteout-${Date.now()}`,
-        type: 'whiteout',
-        pageNumber: activePage,
-        x: Math.max(10, clickX - 50),
-        y: Math.max(10, clickY - 12),
-        width: 140,
-        height: 28,
-        layerId: 'shape-layer',
-        opacity: 1,
-      };
-      const updated = [...elements, newEl];
-      setElements(updated);
-      recordHistory(updated);
-      setSelectedIds([newEl.id]);
-      setActiveTool('select');
-      return;
-    }
-
-    // If user clicked close to an untouched text block in select mode, start editing it immediately
-    const nearbyBlock = (currentPage.textBlocks || []).find((tb) => {
-      if (tb.isErased) return false;
-      return (
-        clickX >= tb.x - 4 &&
-        clickX <= tb.x + tb.width + 4 &&
-        clickY >= tb.y - 4 &&
-        clickY <= tb.y + tb.height + 4
-      );
-    });
-
-    if (nearbyBlock) {
-      const textLayer = layers.find((l) => l.id === 'text-layer');
-      if (!textLayer || (!textLayer.locked && textLayer.visible !== false)) {
-        startEditingTextBlock(nearbyBlock);
-        return;
-      }
-    }
 
     setSelectedIds([]);
+    if (editingId) setEditingId(null);
   };
 
   const handleCanvasDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -944,11 +952,29 @@ export const EditorView: React.FC<EditorViewProps> = ({
     const clickX = Math.round((e.clientX - rect.left) / (zoom / 100));
     const clickY = Math.round((e.clientY - rect.top) / (zoom / 100));
 
-    // Check if user double-clicked on or near any untouched text block
+    // 1. Check if user double-clicked on or near any existing text element
+    const nearbyEl = elements.find((el) => {
+      if (el.pageNumber !== activePage || el.type !== 'text' || isElementLocked(el)) return false;
+      const padX = 24;
+      const padY = 14;
+      return (
+        clickX >= el.x - padX &&
+        clickX <= el.x + (el.width || 60) + padX &&
+        clickY >= el.y - padY &&
+        clickY <= el.y + (el.height || 24) + padY
+      );
+    });
+
+    if (nearbyEl) {
+      setSelectedIds([nearbyEl.id]);
+      setEditingId(nearbyEl.id);
+      return;
+    }
+
+    // 2. Check if user double-clicked on or near any untouched text block
     const nearbyBlock = (currentPage.textBlocks || []).find((tb) => {
-      if (tb.isErased) return false;
-      const padX = 14;
-      const padY = 8;
+      const padX = 24;
+      const padY = 14;
       return (
         clickX >= tb.x - padX &&
         clickX <= tb.x + tb.width + padX &&
@@ -964,7 +990,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
     const isScannedPage = !currentPage.textBlocks || currentPage.textBlocks.length === 0;
 
-    // Otherwise, double-clicking anywhere spawns a new text block at that position
+    // Otherwise, double-clicking on empty canvas whitespace spawns a new text block
     const newEl: CanvasElement = {
       id: `el-text-${Date.now()}`,
       type: 'text',
@@ -990,6 +1016,18 @@ export const EditorView: React.FC<EditorViewProps> = ({
   };
 
   const startEditingTextBlock = (tb: PdfTextBlock) => {
+    // Check if element already exists for this block
+    const existing = elements.find(
+      (el) =>
+        el.originTextBlockId === tb.id ||
+        (el.pageNumber === activePage && Math.abs(el.x - tb.x) < 4 && Math.abs(el.y - tb.y) < 4)
+    );
+    if (existing) {
+      setSelectedIds([existing.id]);
+      setEditingId(existing.id);
+      return;
+    }
+
     // 1. Mark this original text block as erased so a clean white mask permanently covers the original text
     const updatedPages = pages.map((p) =>
       p.pageNumber === activePage
@@ -1802,13 +1840,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
                           prev.includes(el.id) ? prev.filter((id) => id !== el.id) : [...prev, el.id]
                         );
                       } else {
-                        if (selectedIds.includes(el.id) && selectedIds.length === 1 && el.type === 'text' && !isLocked) {
+                        setSelectedIds([el.id]);
+                        if (el.type === 'text' && !isLocked) {
                           setEditingId(el.id);
-                        } else {
-                          setSelectedIds([el.id]);
-                          if (activeTool === 'text' && el.type === 'text' && !isLocked) {
-                            setEditingId(el.id);
-                          } else if (activeTool === 'text' && el.type === 'whiteout' && !isLocked) {
+                        } else if (activeTool === 'text' && el.type === 'whiteout' && !isLocked) {
                             const updated = elements.map((item) =>
                               item.id === el.id
                                 ? {
@@ -1828,7 +1863,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
                             setEditingId(el.id);
                           }
                         }
-                      }
                     }}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
@@ -1943,8 +1977,24 @@ export const EditorView: React.FC<EditorViewProps> = ({
                         <textarea
                           autoFocus
                           value={el.text}
-                          onChange={(e) => updateSelected({ text: e.target.value })}
+                          onChange={(e) => {
+                            const newText = e.target.value;
+                            const charWidth = (el.fontSize || 14) * 0.6;
+                            const longestLine = Math.max(...newText.split('\n').map((l) => l.length), 1);
+                            const neededWidth = Math.max(el.width || 60, Math.round(longestLine * charWidth + 24));
+                            updateSelected({ text: newText, width: neededWidth });
+                          }}
+                          onFocus={(e) => {
+                            if (el.text === 'Type text here') {
+                              e.target.select();
+                            }
+                          }}
                           onBlur={() => setEditingId(null)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') {
+                              setEditingId(null);
+                            }
+                          }}
                           className={`w-full h-full p-1 m-0 border-2 border-blue-500 rounded-xs outline-none resize-none bg-white font-sans ${
                             el.text?.includes('\n') ? 'whitespace-pre-line' : 'whitespace-nowrap overflow-hidden'
                           }`}
