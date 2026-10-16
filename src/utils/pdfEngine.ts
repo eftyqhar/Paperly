@@ -18,9 +18,9 @@ export const renderAndExtractPdf = async (file: File): Promise<PdfParseResult> =
   const arrayBuffer = await file.arrayBuffer();
   const loadingTask = pdfjsLib.getDocument({
     data: new Uint8Array(arrayBuffer),
-    cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',
+    cMapUrl: '/cmaps/',
     cMapPacked: true,
-    standardFontDataUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/standard_fonts/',
+    standardFontDataUrl: '/standard_fonts/',
   });
   const pdf = await loadingTask.promise;
   const numPages = pdf.numPages;
@@ -62,7 +62,9 @@ export const renderAndExtractPdf = async (file: File): Promise<PdfParseResult> =
         }[] = [];
 
         for (const item of textContent.items) {
-          if (!('str' in item) || !item.str || item.str.trim().length === 0) continue;
+          if (!('str' in item) || !item.str) continue;
+          const cleanStr = item.str.replace(/\u0000/g, '');
+          if (cleanStr.trim().length === 0) continue;
           
           const transform = item.transform;
           const [vx, vy] = unscaledViewport.convertToViewportPoint(transform[4], transform[5]);
@@ -73,7 +75,7 @@ export const renderAndExtractPdf = async (file: File): Promise<PdfParseResult> =
           const x = Math.round(vx);
           const height = Math.max(18, Math.round(fontSize * 1.25));
           const y = Math.round(vy - fontSize * 0.88);
-          const width = Math.round(item.width || (item.str.length * fontSize * 0.55));
+          const width = Math.round(item.width || (cleanStr.length * fontSize * 0.55));
 
           const style = textContent.styles ? textContent.styles[item.fontName] : null;
           const fontNameLower = (item.fontName || '').toLowerCase();
@@ -96,7 +98,7 @@ export const renderAndExtractPdf = async (file: File): Promise<PdfParseResult> =
           }
 
           rawItems.push({
-            str: item.str,
+            str: cleanStr,
             x,
             y,
             width,
@@ -110,29 +112,29 @@ export const renderAndExtractPdf = async (file: File): Promise<PdfParseResult> =
 
         // Sort items: top-to-bottom by baseline, then left-to-right on the same line
         rawItems.sort((a, b) => {
-          const baselineTol = Math.max(2.5, Math.min(a.fontSize, b.fontSize) * 0.35);
+          const baselineTol = Math.max(3, Math.min(a.fontSize, b.fontSize) * 0.4);
           if (Math.abs(a.baselineY - b.baselineY) > baselineTol) {
             return a.baselineY - b.baselineY;
           }
           return a.x - b.x;
         });
 
-        // Merge adjacent words into complete coherent sentences and lines
+        // Merge adjacent or overlapping items into complete, coherent sentences and lines
         const groupedLines: typeof rawItems = [];
 
         for (const item of rawItems) {
           const current = groupedLines[groupedLines.length - 1];
-          const lineTol = Math.max(2.5, Math.min(current ? current.fontSize : 12, item.fontSize) * 0.35);
+          const lineTol = Math.max(3.5, Math.min(current ? current.fontSize : 12, item.fontSize) * 0.45);
           const isSameLine = current && Math.abs(current.baselineY - item.baselineY) <= lineTol;
-          const isSameFont = current && Math.abs(current.fontSize - item.fontSize) <= 2.5 && current.fontWeight === item.fontWeight;
+          const isSameFont = current && Math.abs(current.fontSize - item.fontSize) <= 3 && current.fontWeight === item.fontWeight;
 
           if (current && isSameLine && isSameFont) {
             const prevRight = current.x + current.width;
-            const gap = item.x - prevRight;
+            const isAdjacentOrOverlapping = item.x >= current.x - 2 && item.x <= prevRight + current.fontSize * 2.5;
 
-            // Merge words on the same line (allowing standard word spaces and slight overlaps)
-            if (gap >= -6 && gap <= current.fontSize * 2.2) {
-              const needsSpace = gap > 1.2 && !current.str.endsWith(' ') && !item.str.startsWith(' ');
+            if (isAdjacentOrOverlapping) {
+              const gap = item.x - prevRight;
+              const needsSpace = gap > current.fontSize * 0.15 && !current.str.endsWith(' ') && !item.str.startsWith(' ');
               current.str += (needsSpace ? ' ' : '') + item.str;
               current.width = Math.max(current.width, item.x + item.width - current.x);
               current.height = Math.max(current.height, item.height);
@@ -202,8 +204,9 @@ export const renderAndExtractPdf = async (file: File): Promise<PdfParseResult> =
             console.warn('Color sampling error:', err);
           }
 
+          const tbId = `tb-p${pageNum}-${idx}`;
           pageTextBlocks.push({
-            id: `tb-p${pageNum}-${idx}`,
+            id: tbId,
             pageNumber: pageNum,
             x: line.x,
             y: line.y,
@@ -214,7 +217,27 @@ export const renderAndExtractPdf = async (file: File): Promise<PdfParseResult> =
             fontWeight: line.fontWeight,
             fontFamily: line.fontFamily,
             color: detectedColor,
-            isErased: false,
+            isErased: true,
+          });
+
+          // Auto-convert each text block into an interactive editable layer element
+          elements.push({
+            id: `el-text-p${pageNum}-${idx}`,
+            originTextBlockId: tbId,
+            type: 'text',
+            pageNumber: pageNum,
+            x: line.x,
+            y: line.y,
+            width: Math.max(Math.round(line.width) + 16, 40),
+            height: Math.max(24, Math.round(line.fontSize * 1.3), Math.round(line.height * 1.15)),
+            text: line.str,
+            fontSize: line.fontSize,
+            fontWeight: line.fontWeight,
+            fontFamily: line.fontFamily,
+            color: detectedColor,
+            backgroundColor: 'transparent',
+            layerId: 'text-layer',
+            opacity: 1,
           });
         });
       } catch (e) {
@@ -438,14 +461,32 @@ export const exportElementsToPdf = async (
         const b = parseInt(hex.substring(4, 6), 16) / 255 || 0;
 
         lines.forEach((line, index) => {
-          page.drawText(line, {
-            x: el.x,
-            y: pdfY + (lines.length - 1 - index) * (fontSize * 1.2),
-            size: fontSize,
-            font: chosenFont,
-            color: rgb(r, g, b),
-            opacity: el.opacity !== undefined ? el.opacity : 1,
-          });
+          try {
+            page.drawText(line, {
+              x: el.x,
+              y: pdfY + (lines.length - 1 - index) * (fontSize * 1.2),
+              size: fontSize,
+              font: chosenFont,
+              color: rgb(r, g, b),
+              opacity: el.opacity !== undefined ? el.opacity : 1,
+            });
+          } catch {
+            try {
+              const safeLine = line.replace(/[^\x00-\x7F]/g, ' ');
+              if (safeLine.trim()) {
+                page.drawText(safeLine, {
+                  x: el.x,
+                  y: pdfY + (lines.length - 1 - index) * (fontSize * 1.2),
+                  size: fontSize,
+                  font: chosenFont,
+                  color: rgb(r, g, b),
+                  opacity: el.opacity !== undefined ? el.opacity : 1,
+                });
+              }
+            } catch (err) {
+              console.warn('drawText fallback skipped', err);
+            }
+          }
         });
       } else if (el.type === 'highlight') {
         let hex = (el.color || el.highlightColor || '#fef08a').replace('#', '');

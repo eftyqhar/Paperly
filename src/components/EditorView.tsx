@@ -80,7 +80,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [showPagesSidebar, setShowPagesSidebar] = useState<boolean>(true);
   const [leftSidebarTab, setLeftSidebarTab] = useState<'pages' | 'layers'>('pages');
   const [showPropertiesSidebar, setShowPropertiesSidebar] = useState<boolean>(true);
-  const [highlightEditableText, setHighlightEditableText] = useState<boolean>(true);
+  const [highlightEditableText] = useState<boolean>(true);
 
   // Undo / Redo History Stack
   interface HistorySnapshot {
@@ -393,6 +393,16 @@ export const EditorView: React.FC<EditorViewProps> = ({
         e.preventDefault();
         deleteSelected();
         return;
+      }
+
+      // Enter or F2: Edit selected text element
+      if ((e.key === 'Enter' || e.key === 'F2') && !isInput && selectedIds.length === 1) {
+        const el = elements.find((item) => item.id === selectedIds[0]);
+        if (el && el.type === 'text' && !isElementLocked(el)) {
+          e.preventDefault();
+          setEditingId(el.id);
+          return;
+        }
       }
 
       // Escape: Deselect all / Exit editing
@@ -841,6 +851,23 @@ export const EditorView: React.FC<EditorViewProps> = ({
     const clickY = Math.round((e.clientY - rect.top) / (zoom / 100));
 
     if (activeTool === 'text') {
+      const clickedEl = elements.find((el) => {
+        if (el.pageNumber !== activePage || el.type !== 'text') return false;
+        return (
+          clickX >= el.x - 4 &&
+          clickX <= el.x + (el.width || 60) + 4 &&
+          clickY >= el.y - 4 &&
+          clickY <= el.y + (el.height || 24) + 4
+        );
+      });
+
+      if (clickedEl && !isElementLocked(clickedEl)) {
+        setSelectedIds([clickedEl.id]);
+        setEditingId(clickedEl.id);
+        setActiveTool('select');
+        return;
+      }
+
       const newEl: CanvasElement = {
         id: `el-text-${Date.now()}`,
         type: 'text',
@@ -1183,36 +1210,13 @@ export const EditorView: React.FC<EditorViewProps> = ({
             </button>
           </div>
 
-          {/* Editable Text Detection & Tools */}
-          <div className="flex items-center space-x-1 border border-slate-200 dark:border-slate-800 rounded-lg p-0.5 text-xs">
-            <button
-              onClick={() => setHighlightEditableText(!highlightEditableText)}
-              className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors ${
-                highlightEditableText
-                  ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-semibold'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-              }`}
-              title="Highlight all editable text boxes on this page"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-blue-500" />
-              <span className="hidden md:inline">Highlight Text</span>
-              {currentPage.textBlocks && currentPage.textBlocks.filter(tb => !tb.isErased).length > 0 && (
-                <span className="px-1.5 py-0.2 bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200 rounded-full text-[10px] font-bold">
-                  {currentPage.textBlocks.filter(tb => !tb.isErased).length}
-                </span>
-              )}
-            </button>
-
-            {currentPage.textBlocks && currentPage.textBlocks.filter(tb => !tb.isErased).length > 0 && (
-              <button
-                onClick={makeAllPageTextEditable}
-                className="hidden lg:inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50 hover:bg-amber-100 font-semibold transition-all shadow-xs"
-                title="Convert all original text on this page into live editable layer objects"
-              >
-                <span>Edit All Text</span>
-              </button>
-            )}
-          </div>
+          {/* Editable Text Indicator */}
+          {elements.filter(el => el.pageNumber === activePage && el.type === 'text').length > 0 && (
+            <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/80 font-medium shadow-xs">
+              <Sparkles className="w-3.5 h-3.5 text-blue-500 animate-pulse" />
+              <span>{elements.filter(el => el.pageNumber === activePage && el.type === 'text').length} Editable Text Blocks</span>
+            </div>
+          )}
 
           {/* View / Zoom Stepper */}
           <div className="hidden sm:flex items-center space-x-1 border border-slate-200 dark:border-slate-800 rounded-lg p-0.5 text-xs text-slate-600 dark:text-slate-400">
@@ -1639,7 +1643,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
               onUploadPdf(e.dataTransfer.files[0]);
             }
           }}
-          className="flex-1 overflow-auto flex items-start justify-center p-8 bg-slate-200/60 dark:bg-slate-950/80"
+          className="flex-1 min-w-0 overflow-auto flex items-start justify-center p-4 sm:p-8 bg-slate-200/60 dark:bg-slate-950/80"
         >
           {/* Paper Document Canvas */}
           <div
@@ -1773,7 +1777,14 @@ export const EditorView: React.FC<EditorViewProps> = ({
                           prev.includes(el.id) ? prev.filter((id) => id !== el.id) : [...prev, el.id]
                         );
                       } else {
-                        setSelectedIds([el.id]);
+                        if (selectedIds.includes(el.id) && selectedIds.length === 1 && el.type === 'text' && !isLocked) {
+                          setEditingId(el.id);
+                        } else {
+                          setSelectedIds([el.id]);
+                          if (activeTool === 'text' && el.type === 'text' && !isLocked) {
+                            setEditingId(el.id);
+                          }
+                        }
                       }
                     }}
                     onDoubleClick={(e) => {
