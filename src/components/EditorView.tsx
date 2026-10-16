@@ -1049,6 +1049,15 @@ export const EditorView: React.FC<EditorViewProps> = ({
     const safeHeight = Math.max(26, Math.round(tb.fontSize * 1.35), Math.round(tb.height * 1.2));
     const safeWidth = Math.max(tb.width + 16, 40);
 
+    const isDarkBg = Boolean(
+      tb.backgroundColor &&
+      tb.backgroundColor.startsWith('#') &&
+      tb.backgroundColor.length === 7 &&
+      (parseInt(tb.backgroundColor.slice(1, 3), 16) * 299 +
+        parseInt(tb.backgroundColor.slice(3, 5), 16) * 587 +
+        parseInt(tb.backgroundColor.slice(5, 7), 16) * 114) / 1000 < 140
+    );
+
     // 2. Spawn the editable element matching font size, weight, family, and color
     const newEl: CanvasElement = {
       id: `el-edited-${Date.now()}`,
@@ -1063,7 +1072,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
       fontSize: tb.fontSize,
       fontFamily: tb.fontFamily || 'Arial, sans-serif',
       fontWeight: tb.fontWeight || 'normal',
-      color: tb.color || '#0f172a',
+      color: tb.color || (isDarkBg ? '#ffffff' : '#0f172a'),
       backgroundColor: 'transparent',
       layerId: 'text-layer',
       opacity: 1,
@@ -1804,14 +1813,15 @@ export const EditorView: React.FC<EditorViewProps> = ({
               </div>
             )}
 
-            {/* Permanent whiteout masks over all edited original text blocks */}
+            {/* Permanent masks over edited original text blocks matching their exact background color */}
             {currentPage.textBlocks
               ?.filter((tb) => tb.isErased)
               .map((tb) => (
                 <div
                   key={`erased-${tb.id}`}
-                  className="absolute bg-white pointer-events-none z-5"
+                  className="absolute pointer-events-none z-5"
                   style={{
+                    backgroundColor: tb.backgroundColor || '#ffffff',
                     left: `${tb.x - 1}px`,
                     top: `${tb.y}px`,
                     width: `${tb.width + 3}px`,

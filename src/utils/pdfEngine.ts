@@ -2,7 +2,7 @@ import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.js?url';
 import type { CanvasElement, PdfPageInfo, PdfTextBlock } from '../types/pdf';
-import { recognizeCanvasText, convertOcrLinesToElements } from './ocrEngine';
+import { recognizeCanvasText, convertOcrLinesToElements, sampleColorsFromCanvas } from './ocrEngine';
 
 // Safely configure PDF.js worker with Vite asset URL
 if (typeof window !== 'undefined') {
@@ -147,63 +147,16 @@ export const renderAndExtractPdf = async (file: File): Promise<PdfParseResult> =
           groupedLines.push({ ...item });
         }
 
-        // Robust color extraction by analyzing saturated text and dark core stroke pixels
+        // Sample background and text colors accurately for each line
         groupedLines.forEach((line, idx) => {
-          let detectedColor = '#0f172a';
-          try {
-            const cx = Math.max(0, Math.floor(line.x * scale));
-            const cy = Math.max(0, Math.floor(line.y * scale));
-            const cw = Math.min(canvas.width - cx, Math.ceil(line.width * scale));
-            const ch = Math.min(canvas.height - cy, Math.ceil(line.height * scale));
-
-            if (cw > 2 && ch > 2) {
-              const imgData = ctx.getImageData(cx, cy, cw, ch).data;
-              const coloredPixels: { r: number; g: number; b: number; sat: number; bri: number }[] = [];
-              const darkPixels: { r: number; g: number; b: number; bri: number }[] = [];
-
-              for (let p = 0; p < imgData.length; p += 4) {
-                const a = imgData[p + 3];
-                if (a < 180) continue;
-                const r = imgData[p];
-                const g = imgData[p + 1];
-                const b = imgData[p + 2];
-
-                // Skip background pixels (pure white or very light background > 225)
-                if (r > 225 && g > 225 && b > 225) continue;
-
-                const max = Math.max(r, g, b);
-                const min = Math.min(r, g, b);
-                const sat = max === 0 ? 0 : (max - min) / max;
-                const bri = (r * 299 + g * 587 + b * 114) / 1000;
-
-                if (sat >= 0.15 && (max - min) >= 18) {
-                  coloredPixels.push({ r, g, b, sat, bri });
-                } else if (bri < 190) {
-                  darkPixels.push({ r, g, b, bri });
-                }
-              }
-
-              if (coloredPixels.length >= 4) {
-                coloredPixels.sort((a, b) => b.sat - a.sat);
-                const count = Math.max(2, Math.floor(coloredPixels.length * 0.35));
-                const top = coloredPixels.slice(0, count);
-                const avgR = Math.round(top.reduce((sum, p) => sum + p.r, 0) / top.length);
-                const avgG = Math.round(top.reduce((sum, p) => sum + p.g, 0) / top.length);
-                const avgB = Math.round(top.reduce((sum, p) => sum + p.b, 0) / top.length);
-                detectedColor = `#${((1 << 24) + (avgR << 16) + (avgG << 8) + avgB).toString(16).slice(1)}`;
-              } else if (darkPixels.length >= 2) {
-                darkPixels.sort((a, b) => a.bri - b.bri);
-                const count = Math.max(2, Math.floor(darkPixels.length * 0.3));
-                const top = darkPixels.slice(0, count);
-                const avgR = Math.round(top.reduce((sum, p) => sum + p.r, 0) / top.length);
-                const avgG = Math.round(top.reduce((sum, p) => sum + p.g, 0) / top.length);
-                const avgB = Math.round(top.reduce((sum, p) => sum + p.b, 0) / top.length);
-                detectedColor = `#${((1 << 24) + (avgR << 16) + (avgG << 8) + avgB).toString(16).slice(1)}`;
-              }
-            }
-          } catch (err) {
-            console.warn('Color sampling error:', err);
-          }
+          const { backgroundColor: detectedBg, textColor: detectedColor } = sampleColorsFromCanvas(
+            canvas,
+            line.x,
+            line.y,
+            line.width,
+            line.height,
+            scale
+          );
 
           const tbId = `tb-p${pageNum}-${idx}`;
           pageTextBlocks.push({
@@ -218,27 +171,8 @@ export const renderAndExtractPdf = async (file: File): Promise<PdfParseResult> =
             fontWeight: line.fontWeight,
             fontFamily: line.fontFamily,
             color: detectedColor,
-            isErased: true,
-          });
-
-          // Auto-convert each text block into an interactive editable layer element
-          elements.push({
-            id: `el-text-p${pageNum}-${idx}`,
-            originTextBlockId: tbId,
-            type: 'text',
-            pageNumber: pageNum,
-            x: line.x,
-            y: line.y,
-            width: Math.max(Math.round(line.width) + 16, 40),
-            height: Math.max(24, Math.round(line.fontSize * 1.3), Math.round(line.height * 1.15)),
-            text: line.str,
-            fontSize: line.fontSize,
-            fontWeight: line.fontWeight,
-            fontFamily: line.fontFamily,
-            color: detectedColor,
-            backgroundColor: 'transparent',
-            layerId: 'text-layer',
-            opacity: 1,
+            backgroundColor: detectedBg,
+            isErased: false, // CRITICAL: Pristine on initial load! No white boxes!
           });
         });
       } catch (e) {
@@ -250,9 +184,8 @@ export const renderAndExtractPdf = async (file: File): Promise<PdfParseResult> =
         try {
           const ocrLines = await recognizeCanvasText(canvas, scale, 'eng');
           if (ocrLines.length > 0) {
-            const { textBlocks: ocrBlocks, elements: ocrElements } = convertOcrLinesToElements(ocrLines, pageNum);
+            const { textBlocks: ocrBlocks } = convertOcrLinesToElements(ocrLines, pageNum);
             pageTextBlocks.push(...ocrBlocks);
-            elements.push(...ocrElements);
           }
         } catch (ocrErr) {
           console.warn('Auto-OCR fallback error:', ocrErr);
@@ -428,12 +361,21 @@ export const exportElementsToPdf = async (
       for (const tb of pageInfo.textBlocks) {
         if (tb.isErased) {
           const tbPdfY = pageInfo.height - tb.y - tb.height;
+          let maskR = 1, maskG = 1, maskB = 1;
+          if (tb.backgroundColor && tb.backgroundColor.startsWith('#')) {
+            const hex = tb.backgroundColor.replace('#', '');
+            if (hex.length === 6) {
+              maskR = (parseInt(hex.substring(0, 2), 16) || 255) / 255;
+              maskG = (parseInt(hex.substring(2, 4), 16) || 255) / 255;
+              maskB = (parseInt(hex.substring(4, 6), 16) || 255) / 255;
+            }
+          }
           page.drawRectangle({
             x: tb.x - 2,
             y: tbPdfY - 2,
             width: tb.width + 5,
             height: tb.height + 4,
-            color: rgb(1, 1, 1),
+            color: rgb(maskR, maskG, maskB),
             opacity: 1,
           });
         }
@@ -455,12 +397,21 @@ export const exportElementsToPdf = async (
         });
       } else if (el.type === 'text' && el.text) {
         if (el.backgroundColor && el.backgroundColor !== 'transparent') {
+          let bgR = 1, bgG = 1, bgB = 1;
+          if (el.backgroundColor.startsWith('#')) {
+            const hex = el.backgroundColor.replace('#', '');
+            if (hex.length === 6) {
+              bgR = (parseInt(hex.substring(0, 2), 16) || 255) / 255;
+              bgG = (parseInt(hex.substring(2, 4), 16) || 255) / 255;
+              bgB = (parseInt(hex.substring(4, 6), 16) || 255) / 255;
+            }
+          }
           page.drawRectangle({
             x: el.x - 2,
             y: pdfY - 2,
             width: el.width + 4,
             height: el.height + 4,
-            color: rgb(1, 1, 1),
+            color: rgb(bgR, bgG, bgB),
             opacity: 1,
           });
         }

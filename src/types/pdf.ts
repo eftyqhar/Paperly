@@ -65,6 +65,7 @@ export interface PdfTextBlock {
   text: string;
   fontSize: number;
   color?: string;
+  backgroundColor?: string;
   fontWeight?: 'normal' | 'bold';
   fontFamily?: string;
   isErased?: boolean;
